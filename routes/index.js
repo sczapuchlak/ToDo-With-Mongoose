@@ -1,12 +1,12 @@
 var express = require('express');
 var router = express.Router();
-var Task = require('../models/task.js');
+var ObjectID = require('mongodb').ObjectID;
 
 
 /* GET home page, a list of incomplete tasks . */
 router.get('/', function(req, res, next) {
 
-    Task.find({completed:false}, function(err, tasks){
+    req.task_col.find({completed:false}).toArray(function(err, tasks){
         if (err) {
             return next(err);
         }
@@ -15,24 +15,21 @@ router.get('/', function(req, res, next) {
 });
 
 
-
 /* GET all completed tasks. */
 router.get('/completed', function(req, res, next){
-
-    Task.find({completed:true}, function(err, tasks){
+    req.task_col.find({completed:true}).toArray(function(err, tasks){
         if (err) {
             return next(err);
         }
-        res.render('tasks_completed', { title: 'TODO list' , tasks: tasks });
+        res.render('tasks_completed', { title: 'Completed tasks' , tasks: tasks });
     });
-
 });
 
 
-/* Mark all tasks as done. */
-router.post('/alldone', function(req, res, next){
+/* Mark a task as done. Task _id should be provided as a body parameter */
+router.post('tasks/alldone', function(req, res, next){
 
-    Task.update( {completed:false}, {completed:true}, {multi:true}, function(err){
+    req.task_col.updateMany( {completed:false}, { $set: {completed : true}}, function(err, result) {
 
         if (err) {
             return next(err);
@@ -40,23 +37,9 @@ router.post('/alldone', function(req, res, next){
 
         req.flash('info', 'All tasks are done!');
         return res.redirect('/')
-
     });
 });
 
-
-
-
-/* Show details of one task */
-router.get('/task/:id', function(req, res, next){
-
-    Task.findById(req.params.id, function(err, task){
-        if (err) {
-            return next(err);
-        }
-        return res.render('task_detail', {task:task})
-    })
-});
 
 
 /* POST Add new task, then redirect to task list */
@@ -69,58 +52,61 @@ router.post('/add', function(req, res, next){
 
     else {
         // Save new task with text provided, and completed = false
-        var task = Task({ text : req.body.text, completed: false});
+        var task = { text : req.body.text, completed: false};
 
-        task.save(function(err) {
+        req.task_col.insertOne(task, function(err, task) {
             if (err) {
                 return next(err);
             }
-            return res.redirect('/')
-        });
+            res.redirect('/')
+        })
     }
 
 });
 
 
-/* Mark a task as done. Task _id should be provided as req.body parameter */
+/* Mark a task as done. Task _id should be provided as body parameter */
 router.post('/done', function(req, res, next){
 
-    var id = req.body._id;
-    Task.findByIdAndUpdate(id, {completed:true}, function(err, task){
+    req.task_col.updateOne({ _id : ObjectID(req.body._id) }, {$set : { completed : true }}, function(err, result){
 
         if (err) {
-            return next(err);
+            return next(err);    // For database errors, 500 error
         }
 
-        if (!task) {
+        if (result.result.n == 0) {
             var req_err = new Error('Task not found');
             req_err.status = 404;
             return next(req_err);     // Task not found error
         }
 
-        req.flash('info', 'Task marked as done');
+        req.flash('info', 'Marked as completed');
         return res.redirect('/')
 
-    });
+    })
 
 });
 
 
 /* Delete a task. Task _id is in req.body */
 router.post('/delete', function(req, res,next){
-
-    var id = req.body._id;
-
-    Task.findByIdAndRemove(id, function(err){
+    req.task_col.deleteOne({ _id : ObjectID(req.body._id) }, function(err, result){
 
         if (err) {
             return next(err);    // For database errors
+        }
+
+        if (result.result.n == 0) {
+            var req_err = new Error('Task not found');
+            req_err.status = 404;
+            return next(req_err);     // Task not found error
         }
 
         req.flash('info', 'Deleted');
         return res.redirect('/')
 
     })
+
 });
 
 
